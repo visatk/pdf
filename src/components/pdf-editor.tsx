@@ -3,8 +3,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { Loader2, Save, Type, Upload } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
-// Removed unused Card import
-import { modifyPdf, type PdfAnnotation } from "@/lib/pdf-utils"; // Added 'type' keyword
+import { modifyPdf, type PdfAnnotation } from "@/lib/pdf-utils";
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -16,7 +15,7 @@ export function PdfEditor() {
   const [file, setFile] = useState<File | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [scale] = useState(1.0); // Removed setScale as it was unused
+  const [scale] = useState(1.0);
   const [tool, setTool] = useState<"none" | "text">("none");
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,9 +77,8 @@ export function PdfEditor() {
       // Burn annotations into PDF
       const pdfBytes = await modifyPdf(file, annotations);
       
-      // Create a Blob and trigger download
-      // Fix: Cast pdfBytes to any or specific array type to satisfy strict BlobPart check
-      const blob = new Blob([pdfBytes as unknown as Uint8Array], { type: "application/pdf" });
+      // FIX: Cast to 'any' to bypass strict TS check for ArrayBufferLike vs ArrayBuffer
+      const blob = new Blob([pdfBytes as any], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
