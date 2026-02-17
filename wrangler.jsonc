@@ -9,9 +9,31 @@
   "observability": {
     "enabled": true
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PDF_SESSION",
+        "class_name": "PDFSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "PDFSession"
+      ]
+    }
+  ],
   "ai": {
     "binding": "AI"
   },
+  "r2_buckets": [
+    {
+      "binding": "PDF_BUCKET",
+      "bucket_name": "files"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
