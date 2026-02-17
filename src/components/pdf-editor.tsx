@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Loader2, Save, Type, Upload } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { modifyPdf, PdfAnnotation } from "@/lib/pdf-utils";
+// Removed unused Card import
+import { modifyPdf, type PdfAnnotation } from "@/lib/pdf-utils"; // Added 'type' keyword
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -16,7 +16,7 @@ export function PdfEditor() {
   const [file, setFile] = useState<File | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [scale, setScale] = useState(1.0);
+  const [scale] = useState(1.0); // Removed setScale as it was unused
   const [tool, setTool] = useState<"none" | "text">("none");
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -79,7 +79,8 @@ export function PdfEditor() {
       const pdfBytes = await modifyPdf(file, annotations);
       
       // Create a Blob and trigger download
-      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      // Fix: Cast pdfBytes to any or specific array type to satisfy strict BlobPart check
+      const blob = new Blob([pdfBytes as unknown as Uint8Array], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -156,7 +157,7 @@ export function PdfEditor() {
                 onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                 className="flex flex-col gap-4"
               >
-                {Array.from(new Array(numPages), (el, index) => (
+                {Array.from(new Array(numPages), (_, index) => (
                   <div 
                     key={`page_${index + 1}`} 
                     className="relative group bg-white"
