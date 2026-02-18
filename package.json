@@ -17,6 +17,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "unpdf": "^1.4.0",
+    "react-zoom-pan-pinch": "^3.7.0",
+    "@use-gesture/react": "^10.3.1",
     "react-pdf": "^10.3.0",
     "pdf-lib": "^1.17.1",
     "uuid": "^13.0.0",
