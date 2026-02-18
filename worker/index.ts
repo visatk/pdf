@@ -1,46 +1,38 @@
-import { PDFSession, type Env } from "./pdf-session"; // Added 'type' keyword
-
-// Export the class so Cloudflare can find it
+import { PDFSession, type Env } from "./pdf-session";
 export { PDFSession };
 
 export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // 1. CORS Preflight (Crucial for frontend fetching)
+    // CORS
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "*",
+          "Access-Control-Allow-Headers": "Content-Type, Upgrade, WebSocket",
         },
       });
     }
 
-    // 2. API Routing
     if (url.pathname.startsWith("/api/session")) {
-      // Logic: If 'id' query param exists, use it. Otherwise, create new unique ID.
       const idParam = url.searchParams.get("id");
-      const id = idParam 
-        ? env.PDF_SESSION.idFromString(idParam) 
-        : env.PDF_SESSION.newUniqueId();
-      
+      const id = idParam ? env.PDF_SESSION.idFromString(idParam) : env.PDF_SESSION.newUniqueId();
       const stub = env.PDF_SESSION.get(id);
       
-      // Forward the request to the Durable Object
+      // Pass upgrade header for WebSockets
+      if (request.headers.get("Upgrade") === "websocket") {
+         return stub.fetch(request);
+      }
+
       const response = await stub.fetch(request);
-      
-      // Re-attach CORS headers to the response
+      // Re-attach CORS
       const newHeaders = new Headers(response.headers);
       newHeaders.set("Access-Control-Allow-Origin", "*");
-      
-      return new Response(response.body, {
-        status: response.status,
-        headers: newHeaders,
-      });
+      return new Response(response.body, { status: response.status, headers: newHeaders });
     }
 
-    return new Response("PDF Core API Running", { status: 200 });
+    return new Response("Cloudflare PDF Core Ready", { status: 200 });
   },
 } satisfies ExportedHandler<Env>;
