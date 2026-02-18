@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, StandardFonts, PDFFont } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 export interface PdfAnnotation {
   id: string;
@@ -26,7 +26,7 @@ export async function modifyPdf(
   const arrayBuffer = await file.arrayBuffer();
   const pdfDoc = await PDFDocument.load(arrayBuffer);
   const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  // Removed unused helveticaBold
   
   const pages = pdfDoc.getPages();
   
@@ -67,7 +67,6 @@ export async function modifyPdf(
         continue;
     }
 
-    // ... [Existing Logic for other types remains the same] ...
     if (ann.type === "text" && ann.text) {
       page.drawText(ann.text, {
         x: ann.x,
