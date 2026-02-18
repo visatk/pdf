@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { 
@@ -111,7 +111,8 @@ export function PdfEditor() {
   const downloadPdf = async () => {
     if(!file) return;
     const modifiedBytes = await modifyPdf(file, annotations);
-    const blob = new Blob([modifiedBytes], { type: "application/pdf" });
+    // Fixed: Cast to any to resolve TS mismatch between Uint8Array and BlobPart
+    const blob = new Blob([modifiedBytes as any], { type: "application/pdf" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "edited_" + file.name;
