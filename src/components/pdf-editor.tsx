@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { 
   Save, Type, Upload, Eraser, MousePointer2, 
-  Sparkles, Menu, X, ChevronLeft, ChevronRight, Trash2 
+  Sparkles, X 
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { modifyPdf, type PdfAnnotation } from "@/lib/pdf-utils";
 
 // Worker Config
@@ -20,13 +19,11 @@ const WS_BASE = import.meta.env.PROD ? "wss://your-domain.com/api" : "ws://local
 
 export function PdfEditor() {
   const [file, setFile] = useState<File | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   
   // Touch/UI State
   const [tool, setTool] = useState<"none" | "text" | "erase">("none");
-  const [showMenu, setShowMenu] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [aiSummary, setAiSummary] = useState<string>("");
 
@@ -44,7 +41,7 @@ export function PdfEditor() {
       
       const res = await fetch(`${API_BASE}/session/upload`, { method: "POST", body: fd });
       const data = await res.json();
-      setSessionId(data.id);
+      // Session ID used directly in URL, no state needed
 
       // Connect WS
       const socket = new WebSocket(`${WS_BASE}/session/ws?id=${data.id}`);
@@ -72,10 +69,6 @@ export function PdfEditor() {
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
-    // Normalizing coordinates (un-scale them based on current zoom isn't needed 
-    // because we are clicking INSIDE the scaled element, but we need to account for PDF scale)
-    // For simplicity in this snippets, we assume 1.0 base scale for the PDF render
-    
     if (tool === "text") {
        const text = prompt("Enter text:"); // Native prompt is best for mobile keyboard handling
        if (text) {
@@ -105,7 +98,8 @@ export function PdfEditor() {
   const downloadPdf = async () => {
     if(!file) return;
     const modifiedBytes = await modifyPdf(file, annotations);
-    const blob = new Blob([modifiedBytes], { type: "application/pdf" });
+    // Fix: Cast modifiedBytes to any or BlobPart to satisfy TypeScript
+    const blob = new Blob([modifiedBytes as any], { type: "application/pdf" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "edited_" + file.name;
@@ -148,8 +142,6 @@ export function PdfEditor() {
             maxScale={4}
             centerOnInit
             limitToBounds={false}
-            // Disable pinch on the page itself if drawing? 
-            // Usually simpler to have a "Pan" tool vs "Edit" tool
             disabled={tool !== "none"} 
           >
             <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full">
