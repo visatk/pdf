@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { 
@@ -10,67 +10,79 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { modifyPdf, type PdfAnnotation } from "@/lib/pdf-utils";
 
-// Worker Config
+// Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-// Env Config
 const API_BASE = import.meta.env.PROD ? "/api" : "http://localhost:8787/api";
-const WS_BASE = import.meta.env.PROD ? "wss://your-domain.com/api" : "ws://localhost:8787/api";
+const WS_BASE = import.meta.env.PROD ? "wss://" + window.location.host + "/api" : "ws://localhost:8787/api";
 
 export function PdfEditor() {
   const [file, setFile] = useState<File | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   
-  // Touch/UI State
   const [tool, setTool] = useState<"none" | "text" | "erase">("none");
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [aiSummary, setAiSummary] = useState<string>("");
+  const [aiStatus, setAiStatus] = useState<"idle" | "thinking">("idle");
 
-  // Refs for pinch-zoom control
   const transformRef = useRef<any>(null);
 
-  // 1. Initialize Session & WebSocket
+  // Upload and Initialize Session
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const f = e.target.files[0];
-      setFile(f);
       
       const fd = new FormData();
       fd.append("file", f);
       
-      const res = await fetch(`${API_BASE}/session/upload`, { method: "POST", body: fd });
-      const data = await res.json();
-      // Session ID used directly in URL, no state needed
-
-      // Connect WS
-      const socket = new WebSocket(`${WS_BASE}/session/ws?id=${data.id}`);
-      socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "sync-annotations") setAnnotations(msg.annotations);
-        if (msg.type === "ai-result") setAiSummary(msg.text);
-      };
-      setWs(socket);
+      try {
+        const res = await fetch(`${API_BASE}/session/upload`, { method: "POST", body: fd });
+        if (!res.ok) throw new Error("Upload failed");
+        
+        const data = await res.json();
+        setFile(f);
+        setSessionId(data.id);
+        connectWs(data.id);
+      } catch (err) {
+        console.error("Upload Error:", err);
+        alert("Failed to upload PDF");
+      }
     }
   };
 
-  // 2. Touch-Friendly Interaction Handler
+  const connectWs = (id: string) => {
+    if (ws) ws.close();
+    const socket = new WebSocket(`${WS_BASE}/session/ws?id=${id}`);
+    
+    socket.onopen = () => console.log("Connected to Session");
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "sync-annotations") setAnnotations(msg.annotations);
+      if (msg.type === "ai-status") setAiStatus(msg.status);
+      if (msg.type === "ai-result") {
+        setAiSummary(msg.text);
+        setAiStatus("idle");
+      }
+    };
+    setWs(socket);
+  };
+
   const handlePageTap = (e: React.MouseEvent | React.TouchEvent, pageIndex: number) => {
     if (tool === "none") return;
     
-    // Get coordinates relative to the page
     const target = e.currentTarget as HTMLDivElement;
     const rect = target.getBoundingClientRect();
     
-    // Handle both mouse and touch events
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    const clientX = 'touches' in e ? (e as React.TouchEvent).touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? (e as React.TouchEvent).touches[0].clientY : (e as React.MouseEvent).clientY;
 
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
     if (tool === "text") {
-       const text = prompt("Enter text:"); // Native prompt is best for mobile keyboard handling
+       const text = prompt("Enter text:");
        if (text) {
          const newAnn: PdfAnnotation = {
            id: uuidv4(), type: "text", page: pageIndex + 1, x, y, text
@@ -87,40 +99,47 @@ export function PdfEditor() {
          setAnnotations(newSet);
          ws?.send(JSON.stringify({ type: "sync-annotations", annotations: newSet }));
     }
-    setTool("none"); // Reset tool after use for better touch UX
+    setTool("none");
   };
 
   const triggerAi = () => {
     if(!ws) return;
+    setAiStatus("thinking");
     ws.send(JSON.stringify({ type: "ai-summarize" }));
   };
 
   const downloadPdf = async () => {
     if(!file) return;
     const modifiedBytes = await modifyPdf(file, annotations);
-    // Fix: Cast modifiedBytes to any or BlobPart to satisfy TypeScript
-    const blob = new Blob([modifiedBytes as any], { type: "application/pdf" });
+    const blob = new Blob([modifiedBytes], { type: "application/pdf" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "edited_" + file.name;
     link.click();
+    
+    // Optional: Save back to server
+    if (sessionId) {
+        const fd = new FormData();
+        fd.append("file", blob, "edited_" + file.name);
+        fetch(`${API_BASE}/session/save-changes?id=${sessionId}`, { method: "POST", body: fd });
+    }
   };
 
   return (
     <div className="h-screen w-screen bg-slate-100 overflow-hidden flex flex-col relative">
-      {/* Dynamic Island Header */}
+      {/* Header / Dynamic Island */}
       <div className="absolute top-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-        <div className="bg-black/80 backdrop-blur-md text-white rounded-full px-6 py-2 shadow-2xl pointer-events-auto flex items-center gap-4 animate-in slide-in-from-top-4">
+        <div className="bg-black/80 backdrop-blur-md text-white rounded-full px-6 py-2 shadow-2xl pointer-events-auto flex items-center gap-4 transition-all">
            <span className="font-bold text-sm tracking-wide">Cloudflare PDF</span>
-           {aiSummary && (
-             <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full animate-pulse">
-               AI Active
+           {aiStatus === "thinking" && (
+             <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+               <Sparkles className="w-3 h-3" /> Thinking...
              </span>
            )}
         </div>
       </div>
 
-      {/* Main Canvas Area */}
+      {/* Canvas */}
       <div className="flex-1 relative z-0">
         {!file ? (
           <div className="h-full flex flex-col items-center justify-center p-6 text-center">
@@ -128,9 +147,8 @@ export function PdfEditor() {
                <Upload className="w-10 h-10" />
             </div>
             <h2 className="text-2xl font-bold text-slate-800">Tap to Upload</h2>
-            <p className="text-slate-500 mt-2 mb-8 max-w-xs">Secure, touch-friendly editing powered by Cloudflare.</p>
-            <Button size="lg" className="rounded-full px-8 h-12 text-lg shadow-blue-200/50 shadow-lg relative">
-              <input type="file" accept="application/pdf" className="absolute inset-0 opacity-0" onChange={uploadFile} />
+            <Button size="lg" className="rounded-full px-8 h-12 text-lg shadow-lg relative mt-6 cursor-pointer">
+              <input type="file" accept="application/pdf" className="absolute inset-0 opacity-0 cursor-pointer" onChange={uploadFile} />
               Select PDF
             </Button>
           </div>
@@ -141,7 +159,6 @@ export function PdfEditor() {
             minScale={0.5}
             maxScale={4}
             centerOnInit
-            limitToBounds={false}
             disabled={tool !== "none"} 
           >
             <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full">
@@ -151,7 +168,6 @@ export function PdfEditor() {
                       <div 
                         key={i} 
                         className="relative shadow-2xl"
-                        // Touch event handling
                         onClick={(e) => handlePageTap(e, i)}
                       >
                          <Page 
@@ -160,17 +176,17 @@ export function PdfEditor() {
                            renderTextLayer={false}
                            renderAnnotationLayer={false}
                          />
-                         {/* Annotation Layer */}
                          {annotations.filter(a => a.page === i + 1).map(ann => (
                            <div 
                              key={ann.id}
-                             className="absolute pointer-events-none"
+                             className="absolute pointer-events-none whitespace-pre"
                              style={{
                                left: ann.x, top: ann.y,
                                ...(ann.type === "rect" ? { 
                                  width: ann.width, height: ann.height, backgroundColor: ann.color 
                                } : { 
-                                 fontSize: "16px", color: "black", fontWeight: "bold" 
+                                 fontSize: "16px", color: "black", fontWeight: "bold",
+                                 textShadow: "0px 0px 2px white"
                                })
                              }}
                            >
@@ -186,70 +202,45 @@ export function PdfEditor() {
         )}
       </div>
 
-      {/* Floating Action Menu (Mobile Friendly) */}
+      {/* Toolbar */}
       {file && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 z-50">
-           {/* Tool Toggle */}
            <div className="bg-white rounded-full shadow-xl border p-1.5 flex items-center gap-1">
-              <Button 
-                variant={tool === "none" ? "default" : "ghost"} 
-                size="icon" 
-                className="rounded-full w-12 h-12"
-                onClick={() => setTool("none")}
-              >
+              <Button variant={tool === "none" ? "default" : "ghost"} size="icon" className="rounded-full w-12 h-12" onClick={() => setTool("none")}>
                 <MousePointer2 className="w-5 h-5" />
               </Button>
-              <Button 
-                variant={tool === "text" ? "default" : "ghost"} 
-                size="icon" 
-                className="rounded-full w-12 h-12"
-                onClick={() => setTool("text")}
-              >
+              <Button variant={tool === "text" ? "default" : "ghost"} size="icon" className="rounded-full w-12 h-12" onClick={() => setTool("text")}>
                 <Type className="w-5 h-5" />
               </Button>
-              <Button 
-                variant={tool === "erase" ? "default" : "ghost"} 
-                size="icon" 
-                className="rounded-full w-12 h-12"
-                onClick={() => setTool("erase")}
-              >
+              <Button variant={tool === "erase" ? "default" : "ghost"} size="icon" className="rounded-full w-12 h-12" onClick={() => setTool("erase")}>
                 <Eraser className="w-5 h-5" />
               </Button>
            </div>
 
-           {/* AI & Actions */}
            <div className="bg-white rounded-full shadow-xl border p-1.5 flex items-center gap-1">
-             <Button 
-                variant="outline" 
-                size="icon" 
-                className="rounded-full w-12 h-12 text-purple-600 border-purple-100 bg-purple-50"
-                onClick={triggerAi}
-              >
+             <Button variant="outline" size="icon" className="rounded-full w-12 h-12 text-purple-600 bg-purple-50" onClick={triggerAi}>
                 <Sparkles className="w-5 h-5" />
               </Button>
-              <Button 
-                variant="default" 
-                size="icon" 
-                className="rounded-full w-12 h-12 bg-black text-white hover:bg-slate-800"
-                onClick={downloadPdf}
-              >
+              <Button variant="default" size="icon" className="rounded-full w-12 h-12 bg-black text-white hover:bg-slate-800" onClick={downloadPdf}>
                 <Save className="w-5 h-5" />
               </Button>
            </div>
         </div>
       )}
 
-      {/* AI Summary Modal Overlay */}
+      {/* AI Modal */}
       {aiSummary && (
-        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6 relative">
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <Card className="w-full max-w-lg p-6 relative max-h-[80vh] overflow-y-auto">
             <Button variant="ghost" size="icon" className="absolute top-2 right-2" onClick={() => setAiSummary("")}>
               <X className="w-4 h-4" />
             </Button>
-            <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-600" /> AI Summary
+            <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-purple-700">
+              <Sparkles className="w-5 h-5" /> Document Summary
             </h3>
-            <p className="text-slate-600 leading-relaxed">{aiSummary}</p>
+            <div className="text-slate-700 leading-relaxed whitespace-pre-wrap font-mono text-sm">
+              {aiSummary}
+            </div>
           </Card>
         </div>
       )}
