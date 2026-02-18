@@ -26,8 +26,7 @@ export async function modifyPdf(
     const page = pages[ann.page - 1];
     const { height } = page.getSize();
 
-    // NOTE: PDF coordinates start at bottom-left. 
-    // Browser DOM coordinates start at top-left.
+    // PDF coordinates start at bottom-left. Browser DOM starts top-left.
     // We must flip the Y axis: pdfY = height - domY.
 
     if (ann.type === "text" && ann.text) {
@@ -37,6 +36,17 @@ export async function modifyPdf(
         size: 12,
         font: helveticaFont,
         color: rgb(0, 0, 0),
+      });
+    }
+
+    if (ann.type === "rect" && ann.width && ann.height) {
+      page.drawRectangle({
+        x: ann.x,
+        y: height - ann.y - ann.height, // Adjust for bottom-left origin
+        width: ann.width,
+        height: ann.height,
+        color: rgb(1, 1, 0), // Yellow
+        opacity: 0.4,
       });
     }
   }
