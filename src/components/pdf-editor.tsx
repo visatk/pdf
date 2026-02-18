@@ -125,7 +125,7 @@ export function PdfEditor() {
   };
 
   // Drawing Logic
-  const startDrawing = (e: React.MouseEvent, pageIndex: number) => {
+  const startDrawing = (e: React.MouseEvent, _pageIndex: number) => {
       if (tool !== "draw") return;
       setIsDrawing(true);
       const target = e.currentTarget as HTMLDivElement;
